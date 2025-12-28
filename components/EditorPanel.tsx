@@ -10,6 +10,7 @@ interface EditorPanelProps {
   settings: PensionSettings;
   onDataUpdate: (index: number, field: 'ratio' | 'userWage' | 'socialAverageWage', value: number) => void;
   onSettingChange: (key: keyof PensionSettings, value: any) => void;
+  onYearSelect: (index: number) => void;
   onExport: () => void;
   onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -25,6 +26,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
   settings,
   onDataUpdate,
   onSettingChange,
+  onYearSelect,
   onExport,
   onImport,
 }) => {
@@ -34,6 +36,14 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
   const [selectedCityIndex, setSelectedCityIndex] = useState<number>(-1);
   const [importError, setImportError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>('');
+
+  // Local state for global settings to prevent rapid re-calculations during typing
+  const [localSettings, setLocalSettings] = useState<PensionSettings>(settings);
+
+  // Sync local settings when props change (from external source or city selection)
+  useEffect(() => {
+    setLocalSettings(settings);
+  }, [settings]);
 
   // Built-in Database State
   const [dbCities, setDbCities] = useState<CityData[]>([]);
@@ -81,11 +91,9 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
     loadBuiltInDb();
   }, []);
 
-  // Shared Parsing Logic
   const parseDataArray = (rows: any[][]): CityData[] => {
         if (rows.length < 2) return [];
 
-        // 1. Identify Header Row (First row)
         const headers = rows[0].map(h => String(h).trim());
         const yearIndices: Record<number, number> = {};
         
@@ -99,7 +107,6 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
         if (Object.keys(yearIndices).length === 0) return [];
 
         const cities: CityData[] = [];
-        // 2. Iterate Data Rows
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
             if (!row || row.length === 0) continue;
@@ -156,132 +163,236 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
         console.error("File read error:", error);
         setImportError("读取文件失败");
     } finally {
-        // Reset the input value to allow selecting the same file again if needed
         e.target.value = '';
     }
   };
 
   const applyCityData = (city: CityData) => {
       onSettingChange('customWages', city.wages);
-      // Optional: Update initialSocialWage if startYear exists in the data
       if (city.wages[settings.startYear]) {
           onSettingChange('initialSocialWage', city.wages[settings.startYear]);
       }
       setIsDbDropdownOpen(false);
-      setDbSearchTerm(city.name); // Update input to show selected
+      setDbSearchTerm(city.name);
   };
 
   const handleManualImportApply = () => {
       if (selectedCityIndex >= 0 && parsedCities[selectedCityIndex]) {
           applyCityData(parsedCities[selectedCityIndex]);
           setIsImportOpen(false);
-          // NOTE: We do NOT clear parsedCities or fileName here anymore.
-          // This keeps the file loaded in memory so the user can select a different city later.
       }
   };
 
   const handleClearManualFile = (e: React.MouseEvent) => {
-      e.stopPropagation(); // Prevent triggering the parent file input click
+      e.stopPropagation();
       setFileName('');
       setParsedCities([]);
       setSelectedCityIndex(-1);
       setImportError(null);
   };
 
-  // Filter DB cities
   const filteredDbCities = dbCities.filter(c => c.name.toLowerCase().includes(dbSearchTerm.toLowerCase()));
 
-  // Handle Year Data Editing
+  // Interaction handlers for global settings
+  const handleLocalChange = (key: keyof PensionSettings, value: string) => {
+    setLocalSettings(prev => ({ ...prev, [key]: Number(value) }));
+  };
+
+  const commitSettingChange = (key: keyof PensionSettings) => {
+    const value = localSettings[key];
+    // Only commit if different from current props to avoid redundant renders
+    if (value !== settings[key]) {
+      onSettingChange(key, value);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, key: keyof PensionSettings) => {
+    if (e.key === 'Enter') {
+      (e.target as HTMLInputElement).blur();
+    }
+  };
+
   const selectedData = selectedYearIndex !== null ? data[selectedYearIndex] : null;
-  const retirementYear = settings.startYear + (settings.retirementAge - settings.startAge);
-  
-  // Validation for Retirement Age
-  const minRetirementAge = settings.startAge + 15;
-  const isRetirementAgeInvalid = settings.retirementAge < minRetirementAge;
+  const minRetirementAge = localSettings.startAge + 15;
+  const isRetirementAgeInvalid = localSettings.retirementAge < minRetirementAge;
+
+  const handlePrevYear = () => {
+    if (selectedYearIndex !== null && selectedYearIndex > 0) {
+      onYearSelect(selectedYearIndex - 1);
+    }
+  };
+
+  const handleNextYear = () => {
+    if (selectedYearIndex !== null && selectedYearIndex < data.length - 1) {
+      onYearSelect(selectedYearIndex + 1);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
       
-      {/* 1. Selected Year Editor (Now Top) */}
+      {/* 1. Selected Year Editor */}
       <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-6 transition-colors duration-300 ${selectedYearIndex !== null ? 'border-l-4 border-l-emerald-500' : ''}`}>
-        <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center justify-between">
-          <span className="flex items-center gap-2">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-semibold text-gray-700 flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             年度调整 {selectedData ? `(${selectedData.year}年 / ${settings.startAge + (selectedData.year - settings.startYear)}岁)` : ''}
-          </span>
-          {!selectedData && <span className="text-xs font-normal text-amber-500 bg-amber-50 px-2 py-1 rounded">请在图表上点击节点以调整</span>}
-        </h3>
+          </h3>
+          
+          <div className="flex items-center gap-2">
+            {!selectedData && <span className="text-xs font-normal text-amber-500 bg-amber-50 px-2 py-1 rounded mr-2">请在图表上点击节点以调整</span>}
+            
+            <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-100 shadow-sm">
+              <button 
+                onClick={handlePrevYear}
+                disabled={selectedYearIndex === null || selectedYearIndex === 0}
+                title="上一年"
+                className="p-1.5 rounded-md hover:bg-white hover:text-emerald-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:text-gray-400 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+              </button>
+              <div className="w-px h-4 bg-gray-200 self-center mx-0.5"></div>
+              <button 
+                onClick={handleNextYear}
+                disabled={selectedYearIndex === null || selectedYearIndex === data.length - 1}
+                title="下一年"
+                className="p-1.5 rounded-md hover:bg-white hover:text-emerald-600 disabled:opacity-30 disabled:hover:bg-transparent disabled:text-gray-400 transition-all"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+            </div>
+          </div>
+        </div>
         
         {selectedData ? (
-          <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center gap-6">
-                <div className="flex-1">
-                    <div className="flex justify-between mb-2">
-                        <label className="text-sm font-medium text-gray-700">
-                           缴费指数 ({(selectedData.ratio * 100).toFixed(0)}%)
-                        </label>
-                        <span className="text-sm font-bold text-emerald-600">
-                           {selectedData.ratio.toFixed(2)}
-                        </span>
-                    </div>
-                    <input 
-                      type="range"
-                      min={MIN_RATIO}
-                      max={MAX_RATIO}
-                      step={0.1}
-                      value={selectedData.ratio}
-                      onChange={(e) => onDataUpdate(selectedYearIndex!, 'ratio', Number(e.target.value))}
-                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
-                    <div className="flex justify-between text-xs text-gray-400 mt-1">
-                        <span>60% (低档)</span>
-                        <span>100% (平均)</span>
-                        <span>300% (顶格)</span>
-                    </div>
-                </div>
-
-                <div className="flex gap-4">
-                     <div className="p-3 bg-gray-50 rounded-lg min-w-[140px]">
-                        <p className="text-xs text-gray-500 mb-1">当年社平工资 (元/月)</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+            {/* Left Column: Numeric Inputs */}
+            <div className="flex flex-col gap-5">
+                <div className="space-y-4">
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                        <p className="text-xs text-gray-500 mb-2 font-medium">当年社会平均工资 (元/月)</p>
                         <input 
                             type="number"
                             value={selectedData.socialAverageWage}
                             onChange={(e) => onDataUpdate(selectedYearIndex!, 'socialAverageWage', Number(e.target.value))}
-                            className="text-lg font-bold text-blue-600 bg-transparent border-b border-blue-200 w-full outline-none focus:border-blue-500"
+                            className="text-xl font-bold text-blue-600 bg-transparent border-b border-blue-200 w-full outline-none focus:border-blue-500 py-1"
                         />
-                     </div>
-                     <div className="p-3 bg-emerald-50 rounded-lg min-w-[140px]">
-                        <p className="text-xs text-emerald-600 mb-1">个人缴费基数</p>
+                    </div>
+                    <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm">
+                        <p className="text-xs text-emerald-600 mb-2 font-medium">您的个人缴费基数 (元/月)</p>
                         <input 
                             type="number"
                             value={selectedData.userWage}
                             onChange={(e) => onDataUpdate(selectedYearIndex!, 'userWage', Number(e.target.value))}
-                            className="text-lg font-bold text-emerald-700 bg-transparent border-b border-emerald-300 w-full outline-none focus:border-emerald-600"
+                            className="text-xl font-bold text-emerald-700 bg-transparent border-b border-emerald-300 w-full outline-none focus:border-emerald-600 py-1"
                         />
-                     </div>
+                    </div>
+                </div>
+
+                <div className="flex-grow flex flex-col justify-end">
+                    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 text-xs text-gray-500 leading-relaxed italic">
+                        个人月缴费基础=个人年缴费基数÷12
+                    </div>
                 </div>
             </div>
-            
-            <p className="text-sm text-gray-500 bg-blue-50 p-3 rounded-lg border border-blue-100">
-                <span className="font-bold text-blue-600">提示：</span> 
-                您可以直接修改上方数值。将“个人缴费基数”设为 0 可模拟断缴年份。
-            </p>
+
+            {/* Right Column: Quick Buttons & Ratio Slider Card */}
+            <div className="flex flex-col gap-3">
+                {/* Quick Action Buttons - Outside the box */}
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => onDataUpdate(selectedYearIndex!, 'ratio', 0.6)}
+                        className="flex-1 py-1.5 px-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-100 hover:bg-blue-100 transition-colors shadow-sm"
+                    >
+                        最低
+                    </button>
+                    <button 
+                        onClick={() => onDataUpdate(selectedYearIndex!, 'ratio', 3.0)}
+                        className="flex-1 py-1.5 px-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-100 hover:bg-blue-100 transition-colors shadow-sm"
+                    >
+                        最高
+                    </button>
+                    <button 
+                        onClick={() => onDataUpdate(selectedYearIndex!, 'userWage', 0)}
+                        className="flex-1 py-1.5 px-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold border border-red-100 hover:bg-red-100 transition-colors shadow-sm"
+                    >
+                        断缴
+                    </button>
+                </div>
+
+                <div className="flex-grow flex flex-col justify-center bg-gray-50/50 p-6 rounded-2xl border border-dashed border-gray-200">
+                    <div className="flex justify-between items-center mb-4">
+                        <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            缴费指数比例
+                        </label>
+                        <span className="text-2xl font-black text-emerald-600">
+                            {(selectedData.ratio * 100).toFixed(0)}%
+                        </span>
+                    </div>
+                    
+                    <div className="relative pt-2 pb-6">
+                        <input 
+                          type="range"
+                          min={MIN_RATIO}
+                          max={MAX_RATIO}
+                          step={0.1}
+                          value={selectedData.ratio}
+                          onChange={(e) => onDataUpdate(selectedYearIndex!, 'ratio', Number(e.target.value))}
+                          className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="absolute w-full flex justify-between text-[10px] text-gray-400 mt-4 px-1">
+                            <span className="flex flex-col items-center">
+                                <span className="w-px h-1 bg-gray-300 mb-1"></span>
+                                60%
+                            </span>
+                            <span className="flex flex-col items-center">
+                                <span className="w-px h-1 bg-gray-300 mb-1"></span>
+                                100%
+                            </span>
+                            <span className="flex flex-col items-center">
+                                <span className="w-px h-1 bg-gray-300 mb-1"></span>
+                                200%
+                            </span>
+                            <span className="flex flex-col items-center">
+                                <span className="w-px h-1 bg-gray-300 mb-1"></span>
+                                300%
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 flex flex-col gap-2">
+                        <div className="flex justify-between items-center bg-white/60 p-2.5 rounded-lg border border-gray-100 text-xs shadow-sm">
+                            <span className="text-gray-500 font-medium">社平年基数</span>
+                            <span className="font-bold text-blue-600">¥{(selectedData.socialAverageWage * 12).toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center bg-white/60 p-2.5 rounded-lg border border-gray-100 text-xs shadow-sm">
+                            <span className="text-gray-500 font-medium">个人年基数</span>
+                            <span className="font-bold text-emerald-600">¥{(selectedData.userWage * 12).toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
           </div>
         ) : (
-          <div className="h-32 flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-            点击上方折线图中的绿色节点开始编辑
+          <div className="h-64 flex items-center justify-center text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <div className="text-center">
+                <svg className="mx-auto h-12 w-12 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                </svg>
+                点击上方折线图中的节点或使用右侧切换按钮开始编辑
+            </div>
           </div>
         )}
       </div>
 
-      {/* 2. Global Settings Card (Middle) */}
+      {/* 2. Global Settings Card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center gap-2">
            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
            全局参数设置
         </h3>
 
-        {/* Database Selection Section */}
         <div className="mb-6 bg-emerald-50/50 p-4 rounded-lg border border-emerald-100">
            <label className="text-xs font-bold text-emerald-700 block mb-2">
              📚 快速应用城市数据 (从内置数据库)
@@ -314,7 +425,6 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                  )}
               </div>
               
-              {/* Dropdown Results */}
               {isDbDropdownOpen && !isDbLoading && (
                   <div className="absolute z-20 w-full bg-white mt-1 border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
                       {filteredDbCities.length > 0 ? (
@@ -338,22 +448,18 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                   </div>
               )}
            </div>
-           {dbCities.length === 0 && !isDbLoading && (
-               <p className="text-[10px] text-gray-400 mt-1">
-                   提示: 请将 Excel 文件放入 <code className="bg-gray-100 px-1 rounded">public/social_wages.xlsx</code> 以启用此功能。
-               </p>
-           )}
         </div>
         
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-           {/* Row 1: Time settings */}
            <div className="space-y-1">
              <label className="text-xs font-medium text-gray-500">起始缴费年龄</label>
              <input 
                type="number" 
                className="w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-               value={settings.startAge}
-               onChange={(e) => onSettingChange('startAge', Number(e.target.value))}
+               value={localSettings.startAge}
+               onChange={(e) => handleLocalChange('startAge', e.target.value)}
+               onBlur={() => commitSettingChange('startAge')}
+               onKeyDown={(e) => handleKeyDown(e, 'startAge')}
              />
            </div>
            <div className="space-y-1">
@@ -363,9 +469,11 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
              <input 
                type="number" 
                className={`w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none ${isRetirementAgeInvalid ? 'border-red-300 bg-red-50' : ''}`}
-               value={settings.retirementAge}
+               value={localSettings.retirementAge}
                min={minRetirementAge}
-               onChange={(e) => onSettingChange('retirementAge', Number(e.target.value))}
+               onChange={(e) => handleLocalChange('retirementAge', e.target.value)}
+               onBlur={() => commitSettingChange('retirementAge')}
+               onKeyDown={(e) => handleKeyDown(e, 'retirementAge')}
              />
              {isRetirementAgeInvalid && (
                  <p className="text-[10px] text-red-500 font-medium">需至少缴费15年</p>
@@ -376,19 +484,22 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
              <input 
                type="number" 
                className="w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-               value={settings.startYear}
-               onChange={(e) => onSettingChange('startYear', Number(e.target.value))}
+               value={localSettings.startYear}
+               onChange={(e) => handleLocalChange('startYear', e.target.value)}
+               onBlur={() => commitSettingChange('startYear')}
+               onKeyDown={(e) => handleKeyDown(e, 'startYear')}
              />
            </div>
 
-           {/* Row 2: Money settings */}
            <div className="space-y-1">
              <label className="text-xs font-medium text-gray-500" title="对应起始年份的社平工资">起始年社平 (元/月)</label>
              <input 
                type="number" 
                className="w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-               value={settings.initialSocialWage}
-               onChange={(e) => onSettingChange('initialSocialWage', Number(e.target.value))}
+               value={localSettings.initialSocialWage}
+               onChange={(e) => handleLocalChange('initialSocialWage', e.target.value)}
+               onBlur={() => commitSettingChange('initialSocialWage')}
+               onKeyDown={(e) => handleKeyDown(e, 'initialSocialWage')}
              />
            </div>
            <div className="space-y-1">
@@ -397,8 +508,10 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                type="number" 
                className="w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                step="0.1"
-               value={settings.socialWageGrowthRate}
-               onChange={(e) => onSettingChange('socialWageGrowthRate', Number(e.target.value))}
+               value={localSettings.socialWageGrowthRate}
+               onChange={(e) => handleLocalChange('socialWageGrowthRate', e.target.value)}
+               onBlur={() => commitSettingChange('socialWageGrowthRate')}
+               onKeyDown={(e) => handleKeyDown(e, 'socialWageGrowthRate')}
              />
            </div>
            <div className="space-y-1">
@@ -406,19 +519,14 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
              <input 
                type="number" 
                className="w-full border rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-               value={settings.accountBalance}
-               onChange={(e) => onSettingChange('accountBalance', Number(e.target.value))}
+               value={localSettings.accountBalance}
+               onChange={(e) => handleLocalChange('accountBalance', e.target.value)}
+               onBlur={() => commitSettingChange('accountBalance')}
+               onKeyDown={(e) => handleKeyDown(e, 'accountBalance')}
              />
            </div>
         </div>
-        <p className="text-xs text-gray-400 mt-3 bg-gray-50 p-2 rounded">
-          <span className="font-bold">说明：</span> 
-          此设置将生成从 <span className="text-blue-500 font-bold">{settings.startAge}岁</span> ({settings.startYear}年) 
-          到 <span className="text-blue-500 font-bold">{settings.retirementAge}岁</span> ({retirementYear}年) 
-          的缴费曲线。
-        </p>
 
-        {/* Manual Import Button */}
         <div className="mt-4 border-t pt-4">
              <button 
                 onClick={() => setIsImportOpen(!isImportOpen)}
@@ -449,16 +557,14 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                                  {fileName ? (
                                      <>
                                         <span className="text-emerald-600 font-bold">{fileName}</span>
-                                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">已加载</span>
                                         <button 
                                             onClick={handleClearManualFile}
-                                            className="z-10 text-gray-400 hover:text-red-500 p-1 rounded-full hover:bg-white transition-colors border border-transparent hover:border-red-200"
-                                            title="清除文件"
+                                            className="z-10 text-gray-400 hover:text-red-500 p-1 rounded-full"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                         </button>
                                      </>
-                                 ) : "点击上传或拖拽文件到此处"}
+                                 ) : "点击上传或拖拽文件"}
                              </div>
                         </div>
                     </div>
@@ -468,7 +574,6 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                     {parsedCities.length > 0 && (
                         <div className="mt-4 flex items-center gap-3 animate-fade-in">
                                 <div className="flex-1">
-                                    <label className="text-xs text-gray-500 block mb-1">选择导入城市:</label>
                                     <select 
                                         className="w-full border rounded px-2 py-1.5 text-xs outline-none bg-white"
                                         value={selectedCityIndex}
@@ -479,14 +584,12 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                                         ))}
                                     </select>
                                 </div>
-                                <div className="flex items-end h-full">
-                                    <button 
-                                        onClick={handleManualImportApply}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-xs font-semibold h-[30px]"
-                                    >
-                                        确认应用
-                                    </button>
-                                </div>
+                                <button 
+                                    onClick={handleManualImportApply}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-xs font-semibold"
+                                >
+                                    应用
+                                </button>
                         </div>
                     )}
                  </div>
@@ -494,11 +597,8 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
         </div>
       </div>
 
-      {/* 3. Project Tools (Now Bottom) */}
       <div className="flex justify-between items-center bg-blue-50 p-4 rounded-xl border border-blue-100">
-          <div className="text-sm text-blue-800">
-              <span className="font-bold">数据存档：</span> 导出当前配置以便下次使用。
-          </div>
+          <div className="text-sm text-blue-800 font-medium">配置存档：</div>
           <div className="flex gap-3">
               <label className="bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-md text-sm cursor-pointer shadow-sm transition-colors flex items-center gap-1">
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>

@@ -40,26 +40,57 @@ const App: React.FC = () => {
   // Ref to prevent data regeneration loop when importing project
   const skipDataResetRef = useRef(false);
 
-  // Initialize Data when settings involving duration change
+  // Initialize/Update Data while preserving user edits
   useEffect(() => {
-    // If we just imported a project, we want to keep the imported data (which contains manual overrides),
-    // rather than regenerating fresh data from settings.
     if (skipDataResetRef.current) {
         skipDataResetRef.current = false;
         return;
     }
 
-    // Only regenerate if the array length needs to change significantly or it's first load
-    const newData = generateInitialData(settings);
-    setData(newData);
-    // Reset selection if out of bounds or default to middle
-    if (activeYearIndex === null || activeYearIndex >= newData.length) {
-        setActiveYearIndex(Math.floor(newData.length / 2));
-    }
+    // 1. Generate standard baseline based on new settings
+    const baselineData = generateInitialData(settings);
     
-    // Clear AI analysis when data resets
+    // 2. Merge with existing data to preserve user's ratio edits
+    setData(prevData => {
+        if (prevData.length === 0) return baselineData;
+
+        // Create a map of year -> ratio from current data
+        const ratioMap = new Map<number, number>();
+        prevData.forEach(item => ratioMap.set(item.year, item.ratio));
+
+        // Create new data points preserving the ratios where they exist
+        const mergedData = baselineData.map(point => {
+            const preservedRatio = ratioMap.get(point.year);
+            if (preservedRatio !== undefined) {
+                return {
+                    ...point,
+                    ratio: preservedRatio,
+                    userWage: Math.round(point.socialAverageWage * preservedRatio)
+                };
+            }
+            return point;
+        });
+
+        return mergedData;
+    });
+
+    // Ensure active index stays valid
+    setActiveYearIndex(prev => {
+        const retirementYear = settings.startYear + (settings.retirementAge - settings.startAge);
+        const maxIndex = retirementYear - settings.startYear - 1;
+        if (prev === null) return Math.floor(maxIndex / 2);
+        return Math.min(prev, maxIndex);
+    });
+    
     setAiAnalysis(null);
-  }, [settings.startYear, settings.retirementAge, settings.startAge, settings.initialSocialWage, settings.socialWageGrowthRate, settings.customWages]);
+  }, [
+    settings.startYear, 
+    settings.retirementAge, 
+    settings.startAge, 
+    settings.initialSocialWage, 
+    settings.socialWageGrowthRate, 
+    settings.customWages
+  ]);
 
   // Recalculate whenever data or balance changes
   useEffect(() => {
@@ -71,7 +102,8 @@ const App: React.FC = () => {
   const handleDataUpdate = useCallback((index: number, field: 'ratio' | 'userWage' | 'socialAverageWage', value: number) => {
     setData(prevData => {
       const newData = [...prevData];
-      // Create a shallow copy of the item to avoid mutating state directly
+      if (!newData[index]) return prevData;
+      
       const item = { ...newData[index] };
 
       if (field === 'ratio') {
@@ -79,19 +111,15 @@ const App: React.FC = () => {
           item.userWage = Math.round(item.socialAverageWage * value);
       } else if (field === 'userWage') {
           item.userWage = value;
-          // Recalculate ratio based on new wage
           item.ratio = item.socialAverageWage > 0 ? value / item.socialAverageWage : 0;
       } else if (field === 'socialAverageWage') {
           item.socialAverageWage = value;
-          // Recalculate ratio based on new social wage (assuming user wage stays constant)
           item.ratio = value > 0 ? item.userWage / value : 0;
       }
       
-      // Update array with new item
       newData[index] = item;
       return newData;
     });
-    // Invalidate AI analysis as data changed
     setAiAnalysis(null);
   }, []);
 
@@ -114,7 +142,7 @@ const App: React.FC = () => {
         version: 1,
         timestamp: new Date().toISOString(),
         settings,
-        data // Exports current data including manual overrides
+        data 
     };
     
     const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
@@ -128,7 +156,6 @@ const App: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Handler for Importing Project
   const handleImportProject = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -137,16 +164,11 @@ const App: React.FC = () => {
     reader.onload = (event) => {
         try {
             const json = JSON.parse(event.target?.result as string);
-            
-            // Basic validation
             if (json.settings && Array.isArray(json.data)) {
-                // Set flag to skip the automatic data regeneration in useEffect
-                // This ensures we keep the specific data points (with manual overrides) from the file
                 skipDataResetRef.current = true;
-                
                 setSettings(json.settings);
                 setData(json.data);
-                setAiAnalysis(null); // Clear old analysis
+                setAiAnalysis(null);
                 setActiveYearIndex(Math.floor(json.data.length / 2));
             } else {
                 alert("文件格式不正确：缺少 settings 或 data 字段");
@@ -157,13 +179,11 @@ const App: React.FC = () => {
         }
     };
     reader.readAsText(file);
-    // Reset input so same file can be selected again
     e.target.value = ''; 
   };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans pb-12">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -180,12 +200,12 @@ const App: React.FC = () => {
 
       <main className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* Left Column: Visuals & Controls (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
             <ChartSection 
                 data={data} 
                 activeIndex={activeYearIndex} 
                 onYearSelect={setActiveYearIndex} 
+                onDataUpdate={handleDataUpdate}
             />
             
             <EditorPanel 
@@ -194,12 +214,12 @@ const App: React.FC = () => {
                 settings={settings}
                 onDataUpdate={handleDataUpdate}
                 onSettingChange={handleSettingChange}
+                onYearSelect={setActiveYearIndex}
                 onExport={handleExportProject}
                 onImport={handleImportProject}
             />
         </div>
 
-        {/* Right Column: Results & AI (4 cols) */}
         <div className="lg:col-span-4 space-y-6">
             <ResultCard 
                 result={result} 
@@ -208,7 +228,6 @@ const App: React.FC = () => {
                 aiAnalysis={aiAnalysis} 
             />
 
-            {/* Quick Tips Card */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative">
                 <div className="flex justify-between items-center mb-3">
                     <h4 className="font-bold text-gray-800">使用指南</h4>
@@ -223,11 +242,11 @@ const App: React.FC = () => {
                 <ul className="space-y-3 text-sm text-gray-600">
                     <li className="flex gap-2">
                         <span className="text-emerald-500 font-bold">1.</span>
-                        点击左侧图表中的<span className="font-bold text-emerald-600">绿色节点</span>选中具体年份。
+                        在图表中<span className="font-bold text-emerald-600">点击选中</span>对应年份，或使用面板上的箭头快速切换。
                     </li>
                     <li className="flex gap-2">
                         <span className="text-emerald-500 font-bold">2.</span>
-                        拖动下方滑块调整该年的缴费指数 (0.6 - 3.0)。
+                        使用下方滑块调整选中年份的缴费指数 (0.6 - 3.0)。
                     </li>
                     <li className="flex gap-2">
                         <span className="text-emerald-500 font-bold">3.</span>
@@ -243,7 +262,6 @@ const App: React.FC = () => {
 
       </main>
 
-      {/* Rules Modal */}
       {showRules && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -255,7 +273,6 @@ const App: React.FC = () => {
                 </div>
                 <div className="p-6 space-y-8 text-sm text-gray-600">
                     
-                    {/* Basic Pension */}
                     <div className="space-y-3">
                         <h4 className="font-bold text-emerald-600 flex items-center gap-2">
                             1. 基础养老金
@@ -274,13 +291,8 @@ const App: React.FC = () => {
                             <span className="mx-3">×</span>
                             <span className="text-emerald-600 font-bold">1%</span>
                         </div>
-                        <ul className="list-disc pl-5 space-y-1 text-xs text-gray-500">
-                            <li><span className="font-medium text-gray-700">社平工资</span>: 采用您预测的退休当年社会平均工资。</li>
-                            <li><span className="font-medium text-gray-700">平均指数</span>: 历年(个人基数 ÷ 当年社平)的算术平均值。</li>
-                        </ul>
                     </div>
 
-                    {/* Personal Pension */}
                     <div className="space-y-3">
                         <h4 className="font-bold text-blue-600 flex items-center gap-2">
                             2. 个人账户养老金
@@ -295,13 +307,8 @@ const App: React.FC = () => {
                                 <div className="font-medium text-gray-700">计发月数</div>
                             </div>
                         </div>
-                        <ul className="list-disc pl-5 space-y-1 text-xs text-gray-500">
-                            <li><span className="font-medium text-gray-700">账户总额</span>: 初始余额 + 模拟期间累积存入(个人基数 × 8%)。</li>
-                            <li><span className="font-medium text-gray-700">计发月数</span>: 国家标准 (如50岁195, 60岁139等)。</li>
-                        </ul>
                     </div>
 
-                    {/* 3. Personal Average Contribution Index */}
                     <div className="space-y-3">
                         <h4 className="font-bold text-gray-700 flex items-center gap-2">
                             3. 个人平均缴费指数
@@ -316,13 +323,8 @@ const App: React.FC = () => {
                                 <div className="font-medium text-gray-700">N<sub>实际</sub></div>
                             </div>
                         </div>
-                        <ul className="list-disc pl-5 space-y-1 text-xs text-gray-500">
-                            <li><span className="font-medium">Xₙ</span>: 第n年的年度缴费基数。 <span className="font-medium">Cₙ</span>: 对应年份的社平工资。</li>
-                            <li><span className="font-medium">N<sub>实际</sub></span>: 实际缴费年限 (不含视同缴费)。断缴年份不纳入计算（既不计入分子，也不计入分母N实际）。</li>
-                        </ul>
                     </div>
 
-                    {/* 4. Annual Contribution Base */}
                     <div className="space-y-3">
                         <h4 className="font-bold text-gray-700 flex items-center gap-2">
                             4. 本人某年度缴费基数
@@ -337,14 +339,8 @@ const App: React.FC = () => {
                                 <div className="font-medium text-gray-700">12</div>
                             </div>
                         </div>
-                        <ul className="list-disc pl-5 space-y-1 text-xs text-gray-500">
-                            <li><span className="font-bold">断缴月份“0”计算</span>: 如果某月中途断缴，则该月基数为0，分母12不变。</li>
-                            <li><span className="font-medium">在职职工</span>: 按上年度月平均工资确定。</li>
-                            <li><span className="font-medium">灵活就业</span>: 在当年公布的基数上下限间自主选择。</li>
-                        </ul>
                     </div>
 
-                    {/* 5. Accumulated Contribution Years */}
                     <div className="space-y-3">
                         <h4 className="font-bold text-gray-700 flex items-center gap-2">
                             5. 累计缴费年限 (年)
@@ -359,10 +355,6 @@ const App: React.FC = () => {
                                 <div className="font-medium text-gray-700">12</div>
                             </div>
                         </div>
-                        <ul className="list-disc pl-5 space-y-1 text-xs text-gray-500">
-                            <li><span className="font-bold">断缴月份不计入</span>: 只计算实际成功缴费的月份。</li>
-                            <li>该年限同时影响<span className="font-medium text-emerald-600">基础养老金</span>的计算和<span className="font-medium text-blue-600">个人账户</span>的累积。</li>
-                        </ul>
                     </div>
 
                     <div className="bg-amber-50 text-amber-800 p-3 rounded-lg text-xs border border-amber-100 mt-6">
