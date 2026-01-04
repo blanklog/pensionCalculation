@@ -1,13 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createRoot } from 'react-dom/client';
 import ChartSection from './components/ChartSection';
 import EditorPanel from './components/EditorPanel';
 import ResultCard from './components/ResultCard';
 import { PensionDataPoint, PensionSettings, CalculationResult } from './types';
 import { DEFAULT_SETTINGS } from './constants';
 import { generateInitialData, calculatePension } from './utils/calculation';
-import { analyzePensionPlan } from './services/geminiService';
 
 const App: React.FC = () => {
   // 1. State for Settings
@@ -19,7 +17,7 @@ const App: React.FC = () => {
   // 3. State for Interaction
   const [activeYearIndex, setActiveYearIndex] = useState<number | null>(null);
   
-  // 4. State for Results & AI
+  // 4. State for Results
   const [result, setResult] = useState<CalculationResult>({
     monthlyBasicPension: 0,
     monthlyPersonalPension: 0,
@@ -31,8 +29,6 @@ const App: React.FC = () => {
     monthsDivisor: 139,
     contributionYears: 0
   });
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   
   // 5. State for Rules Modal
   const [showRules, setShowRules] = useState(false);
@@ -81,8 +77,6 @@ const App: React.FC = () => {
         if (prev === null) return Math.floor(maxIndex / 2);
         return Math.min(prev, maxIndex);
     });
-    
-    setAiAnalysis(null);
   }, [
     settings.startYear, 
     settings.retirementAge, 
@@ -120,20 +114,11 @@ const App: React.FC = () => {
       newData[index] = item;
       return newData;
     });
-    setAiAnalysis(null);
   }, []);
 
   // Handler for Setting Changes
   const handleSettingChange = (key: keyof PensionSettings, value: number | Record<number, number>) => {
       setSettings(prev => ({ ...prev, [key]: value }));
-  };
-
-  // Handler for AI Analysis
-  const handleAnalyze = async () => {
-      setAiLoading(true);
-      const analysis = await analyzePensionPlan(data, result, settings);
-      setAiAnalysis(analysis);
-      setAiLoading(false);
   };
 
   // Handler for Exporting Project
@@ -168,7 +153,6 @@ const App: React.FC = () => {
                 skipDataResetRef.current = true;
                 setSettings(json.settings);
                 setData(json.data);
-                setAiAnalysis(null);
                 setActiveYearIndex(Math.floor(json.data.length / 2));
             } else {
                 alert("文件格式不正确：缺少 settings 或 data 字段");
@@ -221,12 +205,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-6">
-            <ResultCard 
-                result={result} 
-                loading={aiLoading} 
-                onAnalyze={handleAnalyze} 
-                aiAnalysis={aiAnalysis} 
-            />
+            <ResultCard result={result} />
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative">
                 <div className="flex justify-between items-center mb-3">
@@ -254,7 +233,7 @@ const App: React.FC = () => {
                     </li>
                     <li className="flex gap-2">
                         <span className="text-emerald-500 font-bold">4.</span>
-                        点击“生成规划建议”获取 AI 提供的优化报告。
+                        系统将根据你的调整实时更新右侧退休金预估数值。
                     </li>
                 </ul>
             </div>

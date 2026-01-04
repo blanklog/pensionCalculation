@@ -206,7 +206,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, key: keyof PensionSettings) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       (e.target as HTMLInputElement).blur();
     }
@@ -459,7 +459,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                value={localSettings.startAge}
                onChange={(e) => handleLocalChange('startAge', e.target.value)}
                onBlur={() => commitSettingChange('startAge')}
-               onKeyDown={(e) => handleKeyDown(e, 'startAge')}
+               onKeyDown={(e) => handleKeyDown(e)}
              />
            </div>
            <div className="space-y-1">
@@ -473,7 +473,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                min={minRetirementAge}
                onChange={(e) => handleLocalChange('retirementAge', e.target.value)}
                onBlur={() => commitSettingChange('retirementAge')}
-               onKeyDown={(e) => handleKeyDown(e, 'retirementAge')}
+               onKeyDown={(e) => handleKeyDown(e)}
              />
              {isRetirementAgeInvalid && (
                  <p className="text-[10px] text-red-500 font-medium">需至少缴费15年</p>
@@ -487,7 +487,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                value={localSettings.startYear}
                onChange={(e) => handleLocalChange('startYear', e.target.value)}
                onBlur={() => commitSettingChange('startYear')}
-               onKeyDown={(e) => handleKeyDown(e, 'startYear')}
+               onKeyDown={(e) => handleKeyDown(e)}
              />
            </div>
 
@@ -499,7 +499,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                value={localSettings.initialSocialWage}
                onChange={(e) => handleLocalChange('initialSocialWage', e.target.value)}
                onBlur={() => commitSettingChange('initialSocialWage')}
-               onKeyDown={(e) => handleKeyDown(e, 'initialSocialWage')}
+               onKeyDown={(e) => handleKeyDown(e)}
              />
            </div>
            <div className="space-y-1">
@@ -511,7 +511,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                value={localSettings.socialWageGrowthRate}
                onChange={(e) => handleLocalChange('socialWageGrowthRate', e.target.value)}
                onBlur={() => commitSettingChange('socialWageGrowthRate')}
-               onKeyDown={(e) => handleKeyDown(e, 'socialWageGrowthRate')}
+               onKeyDown={(e) => handleKeyDown(e)}
              />
            </div>
            <div className="space-y-1">
@@ -522,7 +522,7 @@ const EditorPanel: React.FC<EditorPanelProps> = ({
                value={localSettings.accountBalance}
                onChange={(e) => handleLocalChange('accountBalance', e.target.value)}
                onBlur={() => commitSettingChange('accountBalance')}
-               onKeyDown={(e) => handleKeyDown(e, 'accountBalance')}
+               onKeyDown={(e) => handleKeyDown(e)}
              />
            </div>
         </div>

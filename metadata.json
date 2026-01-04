@@ -1,5 +1,5 @@
 {
   "name": "PensionFlow - 智能退休金测算",
-  "description": "一个交互式退休金计算器，允许用户可视化调整历年缴费基数，并通过 Google Gemini AI 获取个性化的养老金优化建议。",
+  "description": "一个交互式退休金计算器，允许用户可视化调整历年缴费基数，并实时获取详细的养老金测算结果。",
   "requestFramePermissions": []
 }
