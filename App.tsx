@@ -6,6 +6,7 @@ import ResultCard from './components/ResultCard';
 import { PensionDataPoint, PensionSettings, CalculationResult } from './types';
 import { DEFAULT_SETTINGS } from './constants';
 import { generateInitialData, calculatePension } from './utils/calculation';
+import { APP_CONFIG } from './appConfig';
 
 const App: React.FC = () => {
   // 1. State for Settings
@@ -15,7 +16,11 @@ const App: React.FC = () => {
   const [data, setData] = useState<PensionDataPoint[]>([]);
 
   // 3. State for Interaction
-  const [activeYearIndex, setActiveYearIndex] = useState<number | null>(null);
+  const [activeYearIndex, setActiveYearIndex] = useState<number | null>(() => {
+    const retirementYear = DEFAULT_SETTINGS.startYear + (DEFAULT_SETTINGS.retirementAge - DEFAULT_SETTINGS.startAge);
+    const maxIndex = retirementYear - DEFAULT_SETTINGS.startYear - 1;
+    return Math.max(0, Math.floor(maxIndex / 2));
+  });
   
   // 4. State for Results
   const [result, setResult] = useState<CalculationResult>({
@@ -43,18 +48,14 @@ const App: React.FC = () => {
         return;
     }
 
-    // 1. Generate standard baseline based on new settings
     const baselineData = generateInitialData(settings);
     
-    // 2. Merge with existing data to preserve user's ratio edits
     setData(prevData => {
         if (prevData.length === 0) return baselineData;
 
-        // Create a map of year -> ratio from current data
         const ratioMap = new Map<number, number>();
         prevData.forEach(item => ratioMap.set(item.year, item.ratio));
 
-        // Create new data points preserving the ratios where they exist
         const mergedData = baselineData.map(point => {
             const preservedRatio = ratioMap.get(point.year);
             if (preservedRatio !== undefined) {
@@ -70,12 +71,11 @@ const App: React.FC = () => {
         return mergedData;
     });
 
-    // Ensure active index stays valid
     setActiveYearIndex(prev => {
         const retirementYear = settings.startYear + (settings.retirementAge - settings.startAge);
         const maxIndex = retirementYear - settings.startYear - 1;
-        if (prev === null) return Math.floor(maxIndex / 2);
-        return Math.min(prev, maxIndex);
+        if (prev === null) return Math.max(0, Math.floor(maxIndex / 2));
+        return Math.min(prev, Math.max(0, maxIndex));
     });
   }, [
     settings.startYear, 
@@ -86,13 +86,11 @@ const App: React.FC = () => {
     settings.customWages
   ]);
 
-  // Recalculate whenever data or balance changes
   useEffect(() => {
     const calc = calculatePension(data, settings);
     setResult(calc);
   }, [data, settings.accountBalance, settings.retirementAge]);
 
-  // Handler for Data Updates (Ratio, User Wage, or Social Wage)
   const handleDataUpdate = useCallback((index: number, field: 'ratio' | 'userWage' | 'socialAverageWage', value: number) => {
     setData(prevData => {
       const newData = [...prevData];
@@ -116,12 +114,10 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // Handler for Setting Changes
-  const handleSettingChange = (key: keyof PensionSettings, value: number | Record<number, number>) => {
+  const handleSettingChange = (key: keyof PensionSettings, value: any) => {
       setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  // Handler for Exporting Project
   const handleExportProject = () => {
     const projectData = {
         version: 1,
@@ -172,12 +168,12 @@ const App: React.FC = () => {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-gradient-to-tr from-emerald-500 to-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">
-                    P
+                    {APP_CONFIG.appName.charAt(0)}
                 </div>
-                <h1 className="text-xl font-bold tracking-tight text-gray-900">PensionFlow</h1>
+                <h1 className="text-xl font-bold tracking-tight text-gray-900">{APP_CONFIG.appName}</h1>
             </div>
             <div className="text-sm text-gray-500 hidden md:block">
-                可视化交互式退休金测算
+                可视化交互式退休金测算 v{APP_CONFIG.version}
             </div>
         </div>
       </header>
@@ -300,38 +296,6 @@ const App: React.FC = () => {
                                     <span className="whitespace-nowrap italic font-serif">(X₁/C₁ + X₂/C₂ + ... + Xₙ/Cₙ)</span>
                                 </div>
                                 <div className="font-medium text-gray-700">N<sub>实际</sub></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <h4 className="font-bold text-gray-700 flex items-center gap-2">
-                            4. 本人某年度缴费基数
-                        </h4>
-                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex items-center justify-center text-sm overflow-x-auto">
-                            <span className="whitespace-nowrap font-medium text-gray-500 mr-3">年度缴费基数</span>
-                            <span className="mr-3">=</span>
-                            <div className="flex flex-col items-center text-center">
-                                <div className="border-b-2 border-gray-400 pb-1 px-2 mb-1">
-                                    <span className="whitespace-nowrap italic">(1月基数 + 2月基数 + ... + 12月基数)</span>
-                                </div>
-                                <div className="font-medium text-gray-700">12</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        <h4 className="font-bold text-gray-700 flex items-center gap-2">
-                            5. 累计缴费年限 (年)
-                        </h4>
-                        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex items-center justify-center text-sm">
-                            <span className="whitespace-nowrap font-medium text-gray-500 mr-3">累计年限</span>
-                            <span className="mr-3">=</span>
-                            <div className="flex flex-col items-center text-center">
-                                <div className="border-b-2 border-gray-400 pb-1 px-2 mb-1">
-                                    <span className="whitespace-nowrap">累计缴费总月数</span>
-                                </div>
-                                <div className="font-medium text-gray-700">12</div>
                             </div>
                         </div>
                     </div>

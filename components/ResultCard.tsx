@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { CalculationResult } from '../types';
+import { APP_CONFIG } from '../appConfig';
 
 interface ResultCardProps {
   result: CalculationResult;
@@ -8,6 +9,9 @@ interface ResultCardProps {
 
 const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
   const [showDonate, setShowDonate] = useState(false);
+
+  // 打赏按钮的可见性仅受全局代码设置控制
+  const isDonationVisible = APP_CONFIG.enableDonationFeature;
 
   // 这里的路径不带 'public/'，因为在构建/预览时，public 文件夹的内容会被直接映射到根目录
   const wechatImg = "/wechat-pay.png";
@@ -72,17 +76,19 @@ const ResultCard: React.FC<ResultCardProps> = ({ result }) => {
         </div>
       </div>
 
-      {/* 打赏按钮 */}
-      <button 
-        onClick={() => setShowDonate(true)}
-        className="w-full py-3 px-4 bg-white border border-gray-200 rounded-xl text-gray-600 font-medium text-sm flex items-center justify-center gap-2 hover:bg-gray-50 hover:border-red-200 hover:text-red-600 transition-all shadow-sm group"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400 group-hover:scale-110 transition-transform"><path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 7.65l8.42 8.42 8.42-8.42a5.4 5.4 0 0 0 0-7.65Z"/></svg>
-        打赏作者，赞助服务器运行
-      </button>
+      {/* 打赏按钮 - 仅受全局 APP_CONFIG 控制 */}
+      {isDonationVisible && (
+        <button 
+          onClick={() => setShowDonate(true)}
+          className="w-full py-3 px-4 bg-white border border-gray-200 rounded-xl text-gray-600 font-medium text-sm flex items-center justify-center gap-2 hover:bg-gray-50 hover:border-red-200 hover:text-red-600 transition-all shadow-sm group animate-fade-in"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400 group-hover:scale-110 transition-transform"><path d="M20.42 4.58a5.4 5.4 0 0 0-7.65 0l-.77.78-.77-.78a5.4 5.4 0 0 0-7.65 7.65l8.42 8.42 8.42-8.42a5.4 5.4 0 0 0 0-7.65Z"/></svg>
+          打赏作者，赞助服务器运行
+        </button>
+      )}
 
       {/* 打赏弹窗 */}
-      {showDonate && (
+      {showDonate && isDonationVisible && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-up">
             <div className="p-8 pb-4">

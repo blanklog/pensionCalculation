@@ -1,6 +1,6 @@
 
 export const DEFAULT_SETTINGS = {
-  startYear: 2024,
+  startYear: 2015,
   startAge: 25,
   retirementAge: 60,
   initialSocialWage: 8000,

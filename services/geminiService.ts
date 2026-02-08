@@ -1,10 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { PensionDataPoint, CalculationResult, PensionSettings } from "../types";
 
-const apiKey = process.env.API_KEY || '';
-// Note: In a real production app, we should check if key exists.
-// For this demo, we assume environment is set up correctly as per instructions.
-const ai = new GoogleGenAI({ apiKey });
+// Removed top-level client initialization to follow guidelines of creating instance right before usage
 
 export const analyzePensionPlan = async (
   data: PensionDataPoint[],
@@ -12,6 +9,10 @@ export const analyzePensionPlan = async (
   settings: PensionSettings
 ): Promise<string> => {
   
+  // Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key
+  // The API key is obtained exclusively from process.env.API_KEY
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
   // Downsample data for prompt if it's too long (e.g., take every 5th year + first + last)
   const summaryData = data.filter((_, idx) => idx === 0 || idx === data.length - 1 || idx % 5 === 0)
     .map(d => `年份${d.year}: 缴费指数${d.ratio.toFixed(2)}, 预估社平${d.socialAverageWage}`).join('\n');
@@ -45,9 +46,11 @@ export const analyzePensionPlan = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      // Using gemini-3-flash-preview for basic text tasks as recommended
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // response.text is a property, not a method
     return response.text || "无法生成分析报告，请稍后再试。";
   } catch (error) {
     console.error("Gemini analysis failed:", error);
