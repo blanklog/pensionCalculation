@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { PensionDataPoint, PensionSettings } from '../types';
 import { MIN_RATIO, MAX_RATIO } from '../constants';
-import { APP_CONFIG } from '../appConfig';
 
 interface EditorPanelProps {
   selectedYearIndex: number | null;
